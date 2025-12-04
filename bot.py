@@ -1,4 +1,7 @@
-﻿import os
+﻿import threading
+import http.server
+import socketserver
+import os
 import logging
 import asyncio
 from typing import Dict, Any
@@ -238,7 +241,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TEXTS[LANG_RO]["start_choose_lang"],
         reply_markup=keyboard,
     )
-
+def run_http_server():
+    """
+    Mic server HTTP doar ca să vadă Render că avem un port deschis.
+    Nu îl folosește nimeni, doar răspunde cu 200 OK.
+    """
+    port = int(os.getenv("PORT", "10000"))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        logger.info(f"HTTP dummy server running on port {port}")
+        httpd.serve_forever()
 
 async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -721,7 +733,14 @@ def main():
     application.add_handler(gift_conv)
     application.add_handler(order_conv)
 
+        application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    ...
+    # pornim un mic HTTP server în background pentru Render
+    threading.Thread(target=run_http_server, daemon=True).start()
+
+    # pornim botul de Telegram
     application.run_polling()
+
 
 
 if __name__ == "__main__":
