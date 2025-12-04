@@ -144,7 +144,7 @@ async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         for p in PRODUCTS
     ]
-    await update.message.reply_markdown(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ---------------- AI GIFT FINDER (GROQ) ----------------
 
@@ -281,7 +281,7 @@ async def gift_occasion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for p in PRODUCTS
     ]
 
-    await update.message.reply_markdown(
+    await update.message.reply_text(
         result_text + "\n\nDacă îți place o boxă, apasă pe butonul de mai jos pentru comandă 👇",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -346,11 +346,11 @@ async def order_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Trimitem adminului
     if ADMIN_CHAT_ID:
         await context.bot.send_message(
-            chat_id=ADMIN_CHAT_ID, text=order_text, parse_mode="Markdown"
+            chat_id=ADMIN_CHAT_ID, text=order_text
         )
 
     # Confirmare pentru client
-    await update.message.reply_markdown(
+    await update.message.reply_text(
         "✅ Comanda ta a fost transmisă!\n\n" + order_text,
         reply_markup=MAIN_KEYBOARD,
     )
@@ -364,7 +364,7 @@ async def order_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Pentru a plasa o comandă, intră întâi la 🛍 *Catalog cadouri* sau folosește "
         "🎁 *Găsește cadoul perfect (AI)* și apoi apasă pe butonul „Comandă”."
     )
-    await update.message.reply_markdown(text, reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text(text, reply_markup=MAIN_KEYBOARD)
 
 async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["order_product"] = None
