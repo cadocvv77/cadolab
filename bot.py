@@ -489,7 +489,7 @@ async def gift_ai_interests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         response = await asyncio.to_thread(
             groq_client.chat.completions.create,
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
