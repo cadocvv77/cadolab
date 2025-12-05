@@ -82,7 +82,7 @@ LANG_RU = "ru"
     ORDER_UPSELL,
     ORDER_CONFIRM,
     SUPPORT_MESSAGE,
-) = range(21)
+) = range(20)
 
 # In-memorie pentru rapoarte simple
 ORDERS: List[Dict[str, Any]] = []
