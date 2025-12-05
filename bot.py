@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 import asyncio
 import threading
@@ -15,6 +15,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
+    LabeledPrice,
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -23,6 +24,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
     ContextTypes,
+    PreCheckoutQueryHandler,
     filters,
 )
 
@@ -33,6 +35,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 SUPPORT_CHAT_ID = os.getenv("SUPPORT_CHAT_ID")  # optional, alt chat pentru operatori
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")  # pentru Telegram Payments
 
 if ADMIN_CHAT_ID:
     try:
@@ -55,6 +58,9 @@ logger = logging.getLogger(__name__)
 
 if not TELEGRAM_TOKEN or not GROQ_API_KEY:
     logger.error("Missing TELEGRAM_TOKEN or GROQ_API_KEY env vars!")
+
+if not PAYMENT_PROVIDER_TOKEN:
+    logger.warning("PAYMENT_PROVIDER_TOKEN is not set – payment will be disabled.")
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -180,6 +186,9 @@ TEXTS: Dict[str, Dict[str, str]] = {
             "Eu îl voi trimite mai departe în chatul de lucru. Când ai terminat, poți apăsa *Înapoi la meniu*."
         ),
         "support_sent": "Am trimis mesajul tău operatorului. Îți va răspunde cât mai curând.",
+        "payment_invoice_info": "💳 Pentru a finaliza comanda, achită factura de mai sus.",
+        "payment_ok": "✅ Plata a fost acceptată! Mulțumim, comanda ta este în lucru. 🎁",
+        "payment_error": "❌ A apărut o eroare la plată. Încearcă din nou sau contactează operatorul.",
     },
     LANG_RU: {
         "start_choose_lang": "Привет! 👋\nВыбери язык, на котором будем общаться:",
@@ -248,6 +257,9 @@ TEXTS: Dict[str, Dict[str, str]] = {
             "Я перешлю его в рабочий чат. Когда закончишь, можешь нажать *Назад в меню*."
         ),
         "support_sent": "Я отправил твоё сообщение оператору. Он ответит как можно скорее.",
+        "payment_invoice_info": "💳 Чтобы завершить заказ, оплати выставленный счёт выше.",
+        "payment_ok": "✅ Оплата прошла успешно! Спасибо, твой заказ в обработке. 🎁",
+        "payment_error": "❌ Произошла ошибка при оплате. Попробуй ещё раз или свяжись с оператором.",
     },
 }
 
@@ -918,9 +930,41 @@ async def order_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         except Exception as e:
             logger.exception("Failed to send order to admin: %s", e)
 
+    # Mesaj pentru client (comanda a fost înregistrată)
     await query.edit_message_text(
         tr(lang, "order_confirmed_client"), reply_markup=get_menu_keyboard(lang)
     )
+
+    # Dacă avem provider de plată și preț numeric, trimitem invoice
+    if PAYMENT_PROVIDER_TOKEN and isinstance(price, (int, float)):
+        try:
+            prices = [LabeledPrice(label=name, amount=int(price * 100))]
+            await context.bot.send_invoice(
+                chat_id=client.id,
+                title=f"Plată comandă #{order_id}",
+                description=f"Plată pentru {name}",
+                payload=f"order-{order_id}",
+                provider_token=PAYMENT_PROVIDER_TOKEN,
+                currency="MDL",  # schimbă dacă providerul cere altă valută
+                prices=prices,
+                need_name=False,
+                need_phone_number=False,
+                need_email=False,
+                need_shipping_address=False,
+                is_flexible=False,
+            )
+            await context.bot.send_message(client.id, tr(lang, "payment_invoice_info"))
+        except Exception as e:
+            logger.exception("Failed to send invoice: %s", e)
+            if ADMIN_CHAT_ID:
+                try:
+                    await context.bot.send_message(
+                        ADMIN_CHAT_ID,
+                        f"[PAYMENT ERROR] Nu am putut trimite invoice pentru comanda #{order_id}: {e!r}",
+                    )
+                except Exception:
+                    pass
+
     return ConversationHandler.END
 
 
@@ -986,6 +1030,40 @@ async def order_cancel_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# ----------------- Payments: precheckout & success -----------------
+
+
+async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verifică și aprobă pre-checkout-ul Telegram Payments."""
+    query = update.pre_checkout_query
+    try:
+        await query.answer(ok=True)
+    except Exception as e:
+        logger.exception("PreCheckout error: %s", e)
+        await query.answer(ok=False, error_message="Eroare la procesarea plății. Încearcă din nou mai târziu.")
+
+
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler apelat când plata a fost făcută cu succes."""
+    lang = get_lang(context)
+    payment = update.message.successful_payment
+    logger.info("Successful payment: %s", payment.to_dict())
+    await update.message.reply_text(tr(lang, "payment_ok"))
+
+    # poți trimite aici un mesaj și adminului dacă vrei
+    if ADMIN_CHAT_ID:
+        try:
+            await update.get_bot().send_message(
+                ADMIN_CHAT_ID,
+                f"✅ Payment received:\n\n"
+                f"Payload: {payment.invoice_payload}\n"
+                f"Total: {payment.total_amount} {payment.currency}\n"
+                f"From user: {update.effective_user.id}",
+            )
+        except Exception as e:
+            logger.exception("Failed to notify admin about payment: %s", e)
+
+
 # ----------------- Contact operator -----------------
 
 
@@ -1005,7 +1083,7 @@ async def support_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📩 Mesaj nou pentru operator de la @{user.username or 'fără_username'} (ID: {user.id}):\n\n{text}"
         )
         try:
-            await context.bot.send_message(chat_id, payload)
+            await update.get_bot().send_message(chat_id, payload)
         except Exception as e:
             logger.exception("Failed to forward support msg: %s", e)
     await send_text(update, context, tr(lang, "support_sent"), reply_markup=get_menu_keyboard(lang))
@@ -1200,6 +1278,10 @@ def main():
     application.add_handler(gift_conv)
     application.add_handler(order_conv)
     application.add_handler(support_conv)
+
+    # Handlere pentru plăți
+    application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
     # HTTP server pentru Render
     threading.Thread(target=run_http_server, daemon=True).start()
