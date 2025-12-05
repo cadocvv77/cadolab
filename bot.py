@@ -121,10 +121,10 @@ TEXTS: Dict[str, Dict[str, str]] = {
     LANG_RO: {
         "start_choose_lang": "Salut! 👋\nAlege limba în care vrei să vorbim:",
         "menu_title": "Alege ce vrei să facem azi:",
-        "btn_catalog": "🛍 Catalog cadouri",
-        "btn_ai": "🎁 Consultant AI",
-        "btn_order": "📦 Plasează comandă",
-        "btn_info": "ℹ️ Despre magazin / Contact",
+        "btn_catalog": " Catalog cadouri",
+        "btn_ai": " Consultant AI",
+        "btn_order": " Plasează comandă",
+        "btn_info": " Despre magazin / Contact",
         "btn_back": "⬅️ Înapoi la meniu",
         "info": (
             "🎁 *Cado Laboratory MD* — botul tău pentru alegerea rapidă a cadoului perfect.\n\n"
